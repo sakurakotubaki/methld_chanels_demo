@@ -12,70 +12,93 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'IOT Weight Scale Demo',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const WeightScalePage(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  final String title;
+class WeightScalePage extends StatefulWidget {
+  const WeightScalePage({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<WeightScalePage> createState() => _WeightScalePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  
-  final platform = MethodChannel("com.jboycode/platforms");
-  String message = "";
+class _WeightScalePageState extends State<WeightScalePage> {
+  static const String _tag = 'WeightScale';
+  static const methodChannel = MethodChannel('com.jboycode/weight_scale/method');
+  static const eventChannel = EventChannel('com.jboycode/weight_scale/event');
+
+  bool isScaleOn = false;
+  double currentWeight = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    talker.debug('$_tag: Initializing weight scale page');
+    setupEventChannel();
+  }
+
+  void setupEventChannel() {
+    eventChannel.receiveBroadcastStream().listen(
+          (weight) {
+        talker.debug('$_tag: Received weight: $weight');
+        setState(() {
+          currentWeight = weight as double;
+        });
+      },
+      onError: (error) {
+        talker.error('$_tag: Error: $error');
+      },
+      onDone: () {
+        talker.info('$_tag: Stream closed');
+      },
+    );
+  }
+
+  Future<void> toggleScale() async {
+    try {
+      talker.debug('$_tag: Toggling scale to: ${!isScaleOn}');
+      final bool result = await methodChannel.invokeMethod('toggleScale', !isScaleOn);
+      talker.debug('$_tag: Toggle result: $result');
+      setState(() {
+        isScaleOn = result;
+      });
+    } on PlatformException catch (e) {
+      talker.error('$_tag: Error: ${e.message}');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        title: const Text('IOT Weight Scale'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Text(widget.title),
       ),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            ElevatedButton(
-              onPressed: _callNativeMethod,
-              child: const Text('Call Native Methods'),
+          children: [
+            // ON/OFF スイッチ
+            Switch(
+              value: isScaleOn,
+              onChanged: (value) => toggleScale(),
             ),
-            Text("Message From Native $message"),
+            const SizedBox(height: 20),
+            // 体重表示
+            Text(
+              isScaleOn ? '${currentWeight.toStringAsFixed(1)} kg' : '-- kg',
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {},
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ),
     );
-  }
-
-  _callNativeMethod() async {
-    /// メソッドには任意の名前をつけることできる。("")
-    /// Native側も同じ名前にする必要がある。
-    try {
-      String message = await platform.invokeMethod("callNative");
-      setState(() {
-        this.message = message;
-      });
-      talker.debug("👻 Message From Native: $message");
-    } on PlatformException catch (e) {
-      talker.error(e.message);
-    } finally {
-      talker.info("MethodChannelを実行した");
-  }
   }
 }

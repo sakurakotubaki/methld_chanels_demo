@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:methld_chanels_demo/talker.dart';
 
 void main() {
   runApp(const MyApp());
@@ -24,7 +23,6 @@ class MyApp extends StatelessWidget {
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key, required this.title});
-
   final String title;
 
   @override
@@ -32,9 +30,51 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  
-  final platform = MethodChannel("com.jboycode/platforms");
-  String message = "";
+  final platform = const MethodChannel("com.jboycode/platforms");
+  bool isScanning = false;
+  String bluetoothState = "unknown";
+  List<Map<String, dynamic>> devices = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _setupMethodCallHandler();
+  }
+
+  void _setupMethodCallHandler() {
+    platform.setMethodCallHandler((call) async {
+      switch (call.method) {
+        case "bluetoothState":
+          setState(() {
+            bluetoothState = call.arguments as String;
+          });
+          break;
+        case "deviceFound":
+          setState(() {
+            devices.add(Map<String, dynamic>.from(call.arguments));
+          });
+          break;
+      }
+    });
+  }
+
+  Future<void> _toggleScan() async {
+    try {
+      if (isScanning) {
+        await platform.invokeMethod("stopScan");
+      } else {
+        setState(() {
+          devices.clear();
+        });
+        await platform.invokeMethod("startScan");
+      }
+      setState(() {
+        isScanning = !isScanning;
+      });
+    } on PlatformException catch (e) {
+      print("Error: ${e.message}");
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,39 +83,35 @@ class _MyHomePageState extends State<MyHomePage> {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: Text(widget.title),
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            ElevatedButton(
-              onPressed: _callNativeMethod,
-              child: const Text('Call Native Methods'),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Bluetooth: $bluetoothState'),
+                Switch(
+                  value: isScanning,
+                  onChanged: (_) => _toggleScan(),
+                ),
+              ],
             ),
-            Text("Message From Native $message"),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {},
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+          ),
+          Expanded(
+            child: ListView.builder(
+              itemCount: devices.length,
+              itemBuilder: (context, index) {
+                final device = devices[index];
+                return ListTile(
+                  title: Text(device['name'] ?? 'Unknown Device'),
+                  subtitle: Text(device['id']),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
-  }
-
-  _callNativeMethod() async {
-    /// メソッドには任意の名前をつけることできる。("")
-    /// Native側も同じ名前にする必要がある。
-    try {
-      String message = await platform.invokeMethod("callNative");
-      setState(() {
-        this.message = message;
-      });
-      talker.debug("👻 Message From Native: $message");
-    } on PlatformException catch (e) {
-      talker.error(e.message);
-    } finally {
-      talker.info("MethodChannelを実行した");
-  }
   }
 }
